@@ -146,7 +146,7 @@ class AllFans:
             fansList = []
             firstfan = self.parse_html(userId,html[0])
             if firstfan == "error":
-                print("获取页面失败")
+                print("获取页面失败!")
                 return "error"
             else:
                 fansList.extend(firstfan)  # 增加第一页粉丝数据
