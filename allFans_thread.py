@@ -4,11 +4,6 @@
 #@File: allFans_thread.py
 #@Software: PyCharm
 
-#-*- coding = utf-8 -*-
-#@Time : 2021/1/21 9:29
-#@Author : zou chuxin
-#@File: allfans.py
-#@Software: PyCharm
 
 from matplotlib import pyplot as plt
 import networkx as nx
@@ -24,22 +19,20 @@ from concurrent.futures import ThreadPoolExecutor,as_completed
 
 class AllFans:
 
-    def __init__(self,headers,userId,fanNum,fanLevel, mysql_config):
+    def __init__(self,headers,userId,fanLevel, mysql_config):
         self.headers = headers
         self.userId = userId
-        self.fanNum = fanNum #把fanNum设为数字,（0表示爬取全部粉丝）
+
         self.fanLevel = fanLevel   #set fanLevel in (1,2,3)
         self.mysql_config = mysql_config
-        self.have_crewed_user = []
+        self.have_crewed_user = []   #放入已经爬取的用户，不需要重复爬取
 
     def get_allfans(self):
         try:
-            (fansList, fansList2) = self.get_fanlist(self.userId,  self.fanNum, self.fanLevel)
-            if self.fanNum == 0:
-                self.create_networkx_allfans(self.userId,fansList2, self.fanLevel)
-            else:
-                self.create_networkx(self.userId,fansList2, self.fanNum, self.fanLevel)
-            savepath = ".\\"+ self.userId +"的"+str(self.fanLevel+1) + "层"+ str(self.fanNum)+"位粉丝数据.csv"
+            (fansList, fansList2) = self.get_fanlist(self.userId,self.fanLevel)
+            self.create_networkx_allfans(self.userId,fansList2, self.fanLevel)
+
+            savepath = ".\\"+ self.userId +"的"+str(self.fanLevel+1) + "层"+"粉丝数据.csv"
 
             self.data_save_mysql(fansList, self.userId, self.fanLevel+1)
             self.data_write_csv(savepath, fansList)
@@ -49,75 +42,68 @@ class AllFans:
             print(info)
 
     #获取最终粉丝列表
-    def get_fanlist(self,userId,  fanNum, fanLevel):
+    def get_fanlist(self,userId, fanLevel):
         fansall = self.get_all_fans(userId)
         fansList = []
         fansList.extend(fansall)
-        # fansListId = []
-        # fansListId.append(userId)
         fansList2 = []
         fansList2.append(fansall)
         print(fansList2)
-        fansIDList = []
-        # fansIDList.append()
-        # print(fansall)
         print("第1轮爬取完毕\n\n")
         for i in range(0, fanLevel):  # 设置爬取深度
             fansl = []  # 所有粉丝存入关系表中
             length = len(fansList2[i])
             print("爬取上一层用户粉丝个数\n", length)
-
-            # for fan in fansList2[i]:
-            #     try:
-            #         if fan[1] in fansListId:
-            #             pass
-            #         else:
-            #             fanall = self.get_all_fans(fan[1])
-            #             if fanall == "error":
-            #                 pass
-            #             else:
-            #                 fansl.extend(fanall)
-            #                 fansListId.append(fan[1])
-            #                 print(fanall)
-            #                 print("已爬用户:",fansListId)
-            #                 print("粉丝数据爬取完毕\n")
-            #     except Exception as e:
-            #         print(e)
-            #         info = traceback.format_exc()
-            #         print(info)
-            #     continue
-
-            fans = []
             for fan in fansList2[i]:
-
-                if fan[1] in self.have_crewed_user:
-                    pass
-                else:
-                    fans.append(fan[1])
-            with ThreadPoolExecutor(max_workers = 5) as pool:
-                futures = [pool.submit(self.get_all_fans,fan) for fan in fans]
-                for future in as_completed(futures):
-                    try:
-                        if future.result() == "error":
+                try:
+                    if fan[1] in self.have_crewed_user:
+                        pass
+                    else:
+                        fanall = self.get_all_fans(fan[1])
+                        if fanall == "error":   #获取该用户粉丝失败，直接跳过
                             pass
                         else:
-                            fansl.extend(future.result())
+                            fansl.extend(fanall)
+                            print(fanall)
+                            print("粉丝数据爬取完毕\n")
+                            self.have_crewed_user.append(fan[1])
+                except Exception as e:
+                    print(e)
+                    info = traceback.format_exc()
+                    print(info)
+                continue
 
-                            print("粉丝数据爬取完毕\n" )
-                    except Exception as e:
-                        print(e)
-                        info = traceback.format_exc()
-                        print(info)
-                    continue
+            #用线程池方法如下：
+            # fans = []
+            # for fan in fansList2[i]:
+            #
+            #     if fan[1] in self.have_crewed_user:
+            #         pass
+            #     else:
+            #         fans.append(fan[1])
+            # with ThreadPoolExecutor(max_workers = 5) as pool:
+            #     futures = [pool.submit(self.get_all_fans,fan) for fan in fans]
+            #     for future in as_completed(futures):
+            #         try:
+            #             if future.result() == "error":
+            #                 pass
+            #             else:
+            #                 fansl.extend(future.result())
+            #
+            #                 print("粉丝数据爬取完毕\n" )
+            #         except Exception as e:
+            #             print(e)
+            #             info = traceback.format_exc()
+            #             print(info)
+            #         continue
 
 
             fansList.extend(fansl)
             fansList2.append(fansl)
-            time.sleep(random.randint(4, 6))
+            time.sleep(random.randint(5, 8))
             print("第%d轮爬取完毕\n\n" % (i + 2))
         print(fansList)
         print(fansList2)
-        #create_networkx(fansList2)
         return fansList,fansList2
 
 
@@ -126,7 +112,7 @@ class AllFans:
     def get_all_fans(self,userId):
         print("已爬用户：", self.have_crewed_user)
         headers = self.headers
-        self.have_crewed_user.append(userId)
+
         url = "https://m.weibo.cn/api/container/getIndex?containerid=231051_-_fans_-_" + userId
         print(url)
         fansNum = self.get_fans_num(userId, headers)
@@ -167,8 +153,8 @@ class AllFans:
                             print(e)
                             info = traceback.format_exc()
                             print(info)
-                        i = i + 1
-                        time.sleep(random.randint(5, 8))
+
+                        time.sleep(random.randint(7, 10))
                         continue
                 #print(fansList)
 
@@ -178,9 +164,6 @@ class AllFans:
     def get_html(self,url, headers):
         try:
             response = requests.get(url=url, headers = headers)
-            #print(type(response))
-            #print(response.text)
-            #print(response)
             res = response.json()
             return res
         except Exception as e:
@@ -199,7 +182,7 @@ class AllFans:
                 url = url+"&since_id="+str(self.get_since_id(html))
                 #print(url)
                 response = requests.get(url=url, headers = headers)
-                if response.json() == []:
+                if response.json() == []:       #json获取失败，返回错误
                     return "error"
                 else:
                     res = response.json()
@@ -224,11 +207,10 @@ class AllFans:
             print(info)
             return "error"
 
-    #解析数据
+    #解析数据，得到一页中粉丝的id和昵称
     def parse_html(self,userId, html):
         try:
             fansList = []
-            fansListId = []
             if html["data"]["cards"] == []:
                 return "error"
             else:
@@ -239,22 +221,21 @@ class AllFans:
                         fansInfo = []
                         if card.get('user')["followers_count"] == None:
                             return "error"
+                            break
                         else:
                             followersNum = card.get('user')["followers_count"]
                             #print("follower_count",followersNum)
-                            if followersNum < 50 or followersNum > 200:
+                            if followersNum < 1000 or followersNum > 10000000:   #爬取粉丝的粉丝数在1000到10000000之间
                                 pass
                             else:
                                 fansInfo.append(userId)
                                 if card.get('user')["id"] == None:
                                     return "error"
-                                    break
                                 else:
                                     fansInfo.append(str(card.get('user')["id"]))
                                     fansName = card.get('user')["screen_name"]
                                     fansInfo.append(fansName)
                                     fansList.append(fansInfo)
-
                     except Exception as e:
                         print(e)
                         info = traceback.format_exc()
@@ -340,7 +321,7 @@ class AllFans:
         cursor.close()
         conn.close()
 
-
+    #获取粉丝间社交网络图
     def create_networkx_allfans(self,userId, dataList, fanLevel):
         G = nx.DiGraph()
         G.add_node(userId)
@@ -375,12 +356,13 @@ class AllFans:
 
 def main():
     headers = random.choice([ {
-        "cookie": "SUB=_2A25y5TpSDeRhGeBP6lYY9C3Fzz-IHXVuJkYarDV6PUJbkdANLUnykW1NRZVO-Uh7XDz1Ceqb9XkuIJHcf_BcQfkQ; _T_WM=91830411068; XSRF-TOKEN=0f9095; WEIBOCN_FROM=1110006030; MLOGIN=1; M_WEIBOCN_PARAMS=uicode%3D20000174",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
-        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "accept-encoding": "gzip, deflate, br",
-        "accept-language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2"
-    },{
+    #     "cookie": "SUB=_2A25y5TpSDeRhGeBP6lYY9C3Fzz-IHXVuJkYarDV6PUJbkdANLUnykW1NRZVO-Uh7XDz1Ceqb9XkuIJHcf_BcQfkQ; _T_WM=91830411068; XSRF-TOKEN=0f9095; WEIBOCN_FROM=1110006030; MLOGIN=1; M_WEIBOCN_PARAMS=uicode%3D20000174",
+    #     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
+    #     "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    #     "accept-encoding": "gzip, deflate, br",
+    #     "accept-language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2"
+    # },
+    #{
         "cookie": "SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9WWZ.2peNWRuScjKBxMq-znZ5NHD95QceK2X1KB01KB0Ws4DqcjyqcyfqJi4i--NiKLWiKnXi--4iK.Ri-isi--ci-8hi-20; SUB=_2A25NDUEdDeRhGeBP6lYY9C3Fzz-IHXVuDm9VrDV6PUJbkdAKLWrakW1NRZVO-Qd9ZKdH2bTsJtN0mrq-tkYwLc2J; SCF=AsZQj2NVi5vYBq2HW79Sp3si0TpLOVH9yyeeT-hwo1lzgUwjOrCFieCz9DJtXoNe8me7lbMeSGac8FXOnriw4wQ.; WEIBOCN_FROM=1110006030; _T_WM=20576566259; XSRF-TOKEN=87e52e; MLOGIN=1; M_WEIBOCN_PARAMS=luicode%3D20000174%26uicode%3D20000174",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36",
         "accept": "application/json, text/plain, */*",
@@ -388,10 +370,17 @@ def main():
         "accept-language":"zh-CN,zh;q=0.9",
         "x-requested-with":"XMLHttpRequest",
         "x-xsrf-token":"2a4cad"
-    }
+    },{
+        "cookie": "login_sid_t=cdfa811d7cb687e0b475d623283f5720; cross_origin_proto=SSL; _s_tentry=passport.weibo.com; Apache=5820680220264.733.1616289535803; SINAGLOBAL=5820680220264.733.1616289535803; ULV=1616289535866:1:1:1:5820680220264.733.1616289535803:; wvr=6; webim_unReadCount=%7B%22time%22%3A1616289628278%2C%22dm_pub_total%22%3A0%2C%22chat_group_client%22%3A0%2C%22chat_group_notice%22%3A0%2C%22allcountNum%22%3A11%2C%22msgbox%22%3A0%7D",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko",
+        "accept": "text/html, application/xhtml+xml, image/jxr, */*",
+        "accept-language": "zh-Hans-CN, zh-Hans; q=0.5",
+        "Connection": "Keep-Alive",
+        "accept-encoding":"gzip, deflate"
+        }
     ])
 
-    userId = '7423347358'  # 修改微博用户id
+    userId = '5238309086'  # 修改微博用户id
     mysql_config = {
         "host": "localhost",
         "port": 3306,
@@ -402,13 +391,12 @@ def main():
     }
 
 
-    # #获取多层粉丝列表及社交网络图
-    fanNum = 0 #把fanNum设为数字,（0表示爬取全部粉丝）
-    fanLevel = 2   #set fanLevel in (1,2,3)
-    get_allfans(headers, userId, fanNum, fanLevel, mysql_config)
 
-def get_allfans(headers, userId, fanNum, fanLevel, mysql_config):
-    get_allfan = AllFans(headers, userId, fanNum,fanLevel, mysql_config)
+    fanLevel = 2   #set fanLevel in (1,2,3)
+    get_allfans(headers, userId, fanLevel, mysql_config)
+
+def get_allfans(headers, userId, fanLevel, mysql_config):
+    get_allfan = AllFans(headers, userId, fanLevel, mysql_config)
     get_allfan.get_allfans()
 
 if __name__ == "__main__":  # 相当于程序入口
